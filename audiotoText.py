@@ -20,12 +20,12 @@ with sr.AudioFile(audio_file_path) as source:
         print("Transcribed text:", text)
 
         # Define the output file path for the transcribed text
-        report = os.path.join(base_dir, "outputText.txt")
+        path = os.path.join(base_dir, "outputText.txt")
         
         # Save the transcribed text to a file
-        with open(report, 'w') as f:
+        with open(path, 'w') as f:
             f.write(text)
-            print(f"Classification report saved to {report}")
+            print(f"Classification report saved to {path}")
 
     except sr.UnknownValueError:
         print("Google Speech Recognition could not understand audio")
