@@ -1,57 +1,57 @@
 import streamlit as st
-from pydub import AudioSegment
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
+import numpy as np
+import av
 import whisper
+from pydub import AudioSegment
 import os
 import tempfile
-import sounddevice as sd
-import wavio
+
+# Initialize Whisper model
+model = whisper.load_model("base")
+
+class AudioProcessor(AudioProcessorBase):
+    def __init__(self) -> None:
+        self.recording = []
+        self.transcription = ""
+
+    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+        audio = frame.to_ndarray().flatten()
+        self.recording.append(audio)
+        return frame
+
+    def transcribe_audio(self):
+        temp_audio_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        audio_array = np.concatenate(self.recording)
+        audio_segment = AudioSegment(
+            audio_array.tobytes(), 
+            frame_rate=48000, 
+            sample_width=2, 
+            channels=1
+        )
+        audio_segment.export(temp_audio_file.name, format="mp3")
+
+        self.transcription = model.transcribe(temp_audio_file.name)["text"]
+        os.unlink(temp_audio_file.name)
 
 st.title("Real-time Audio Recorder and Transcriber")
 
-# Function to record audio
-def record_audio(filename, duration=10, fs=44100):
-    st.write("Recording...")
-    recording = sd.rec(int(duration * fs), samplerate=fs, channels=2)
-    sd.wait()  # Wait until recording is finished
-    wavio.write(filename, recording, fs, sampwidth=2)
-    st.write("Recording finished")
+webrtc_ctx = webrtc_streamer(
+    key="audio", 
+    mode=WebRtcMode.SENDRECV, 
+    audio_processor_factory=AudioProcessor,
+    media_stream_constraints={"audio": True, "video": False},
+    async_processing=True,
+)
 
-# Record audio button
-if st.button("Record Audio"):
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-        record_audio(temp_file.name)
-        audio_file_path = temp_file.name
+if webrtc_ctx.audio_processor:
+    audio_processor = webrtc_ctx.audio_processor
 
-    # Display audio player
-    audio = AudioSegment.from_wav(audio_file_path)
-    audio.export(audio_file_path.replace(".wav", ".mp3"), format="mp3")
-    st.audio(audio_file_path.replace(".wav", ".mp3"))
-
-    # Transcribe audio
-    model = whisper.load_model("base")
-    result = model.transcribe(audio_file_path)
-    st.write("Transcription:")
-    st.write(result["text"])
-
-# File upload
-uploaded_file = st.file_uploader("Upload an audio file", type=["wav", "mp3"])
-filename_input = st.text_input("Enter the file name (without extension)")
-
-if uploaded_file is not None and filename_input:
-    # Save uploaded file
-    audio_file_path = os.path.join("./audio", filename_input + ".mp3")
-    with open(audio_file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+    if st.button("Start Recording"):
+        audio_processor.recording = []
     
-    # Transcribe audio
-    model = whisper.load_model("base")
-    result = model.transcribe(audio_file_path)
-    st.write("Transcription:")
-    st.write(result["text"])
-
-    # Save transcription
-    text_file_path = os.path.join("./text", filename_input + ".txt")
-    with open(text_file_path, "w") as text_file:
-        text_file.write(result["text"])
-
-    st.success(f"File saved as {audio_file_path} and transcription saved as {text_file_path}")
+    if st.button("Stop Recording"):
+        with st.spinner("Processing..."):
+            audio_processor.transcribe_audio()
+            st.write("Transcription:")
+            st.write(audio_processor.transcription)
