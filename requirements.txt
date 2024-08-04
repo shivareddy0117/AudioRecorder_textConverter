@@ -1,5 +1,3 @@
 streamlit
-pydub
-sounddevice
 whisper
-torch
+pydub
