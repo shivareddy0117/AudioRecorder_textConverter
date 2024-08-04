@@ -1,4 +1,6 @@
-
 streamlit
-whisper
 pydub
+whisper
+openai
+sounddevice
+wavio

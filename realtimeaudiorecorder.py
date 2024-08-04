@@ -1,40 +1,57 @@
 import streamlit as st
-import sounddevice as sd
-from scipy.io.wavfile import write
+from pydub import AudioSegment
 import whisper
 import os
+import tempfile
+import sounddevice as sd
+import wavio
 
-# Set up the Whisper model
-model = whisper.load_model("base")
-
-st.title("Real-time Audio Recorder")
+st.title("Real-time Audio Recorder and Transcriber")
 
 # Function to record audio
-def record_audio(duration, filename):
-    fs = 44100  # Sample rate
-    seconds = duration  # Duration of recording
+def record_audio(filename, duration=10, fs=44100):
     st.write("Recording...")
-    myrecording = sd.rec(int(seconds * fs), samplerate=fs, channels=2)
+    recording = sd.rec(int(duration * fs), samplerate=fs, channels=2)
     sd.wait()  # Wait until recording is finished
-    write(filename, fs, myrecording)  # Save as WAV file
-    st.write("Recording saved as ", filename)
+    wavio.write(filename, recording, fs, sampwidth=2)
+    st.write("Recording finished")
 
-# Function to transcribe audio
-def transcribe_audio(audio_file):
-    st.write("Transcribing audio...")
-    result = model.transcribe(audio_file)
-    st.write("Transcription: ", result["text"])
-    text_file = audio_file.replace(".wav", ".txt")
-    with open(text_file, "w") as f:
-        f.write(result["text"])
-    st.write("Transcription saved as ", text_file)
-
-# Streamlit UI elements
-duration = st.slider("Select recording duration (seconds)", 1, 10, 5)
-filename = st.text_input("Enter the file name", "audio.wav")
-
+# Record audio button
 if st.button("Record Audio"):
-    record_audio(duration, filename)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+        record_audio(temp_file.name)
+        audio_file_path = temp_file.name
 
-if st.button("Transcribe Audio"):
-    transcribe_audio(filename)
+    # Display audio player
+    audio = AudioSegment.from_wav(audio_file_path)
+    audio.export(audio_file_path.replace(".wav", ".mp3"), format="mp3")
+    st.audio(audio_file_path.replace(".wav", ".mp3"))
+
+    # Transcribe audio
+    model = whisper.load_model("base")
+    result = model.transcribe(audio_file_path)
+    st.write("Transcription:")
+    st.write(result["text"])
+
+# File upload
+uploaded_file = st.file_uploader("Upload an audio file", type=["wav", "mp3"])
+filename_input = st.text_input("Enter the file name (without extension)")
+
+if uploaded_file is not None and filename_input:
+    # Save uploaded file
+    audio_file_path = os.path.join("./audio", filename_input + ".mp3")
+    with open(audio_file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    # Transcribe audio
+    model = whisper.load_model("base")
+    result = model.transcribe(audio_file_path)
+    st.write("Transcription:")
+    st.write(result["text"])
+
+    # Save transcription
+    text_file_path = os.path.join("./text", filename_input + ".txt")
+    with open(text_file_path, "w") as text_file:
+        text_file.write(result["text"])
+
+    st.success(f"File saved as {audio_file_path} and transcription saved as {text_file_path}")
