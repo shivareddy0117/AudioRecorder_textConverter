@@ -1,43 +1,40 @@
 import streamlit as st
+import sounddevice as sd
+from scipy.io.wavfile import write
 import whisper
-import pydub
-from pydub import AudioSegment
-from io import BytesIO
 import os
+
+# Set up the Whisper model
+model = whisper.load_model("base")
 
 st.title("Real-time Audio Recorder")
 
-def save_audio(uploaded_file, file_name):
-    audio = AudioSegment.from_file(uploaded_file)
-    audio_file_path = os.path.join("audio", f"{file_name}.mp3")
-    audio.export(audio_file_path, format="mp3")
-    return audio_file_path
+# Function to record audio
+def record_audio(duration, filename):
+    fs = 44100  # Sample rate
+    seconds = duration  # Duration of recording
+    st.write("Recording...")
+    myrecording = sd.rec(int(seconds * fs), samplerate=fs, channels=2)
+    sd.wait()  # Wait until recording is finished
+    write(filename, fs, myrecording)  # Save as WAV file
+    st.write("Recording saved as ", filename)
 
-def transcribe_audio(audio_path):
-    model = whisper.load_model("base")
-    result = model.transcribe(audio_path)
-    return result["text"]
+# Function to transcribe audio
+def transcribe_audio(audio_file):
+    st.write("Transcribing audio...")
+    result = model.transcribe(audio_file)
+    st.write("Transcription: ", result["text"])
+    text_file = audio_file.replace(".wav", ".txt")
+    with open(text_file, "w") as f:
+        f.write(result["text"])
+    st.write("Transcription saved as ", text_file)
 
-if 'recorded_audio' not in st.session_state:
-    st.session_state['recorded_audio'] = None
+# Streamlit UI elements
+duration = st.slider("Select recording duration (seconds)", 1, 10, 5)
+filename = st.text_input("Enter the file name", "audio.wav")
 
-if 'transcribed_text' not in st.session_state:
-    st.session_state['transcribed_text'] = None
+if st.button("Record Audio"):
+    record_audio(duration, filename)
 
-uploaded_file = st.file_uploader("Upload audio file", type=["wav", "mp3"])
-
-file_name = st.text_input("Enter the file name")
-
-if st.button("Save and Transcribe"):
-    if uploaded_file and file_name:
-        audio_path = save_audio(uploaded_file, file_name)
-        st.session_state['recorded_audio'] = audio_path
-        st.session_state['transcribed_text'] = transcribe_audio(audio_path)
-        st.success(f"File saved as {audio_path}")
-    else:
-        st.error("Please upload an audio file and enter a file name")
-
-if st.session_state['recorded_audio']:
-    st.audio(st.session_state['recorded_audio'])
-    st.write("Transcription:")
-    st.write(st.session_state['transcribed_text'])
+if st.button("Transcribe Audio"):
+    transcribe_audio(filename)
